@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="da">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#07101f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Bet Tracker">
+<title>Betting Tracker Pro</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="app">
+<header class="topbar">
+  <div><p class="eyebrow">BETTING TRACKER PRO</p><h1 id="pageTitle">Dashboard</h1></div>
+  <button id="quickAdd" class="quick-add" aria-label="Nyt bet">＋</button>
+</header>
+
+<main>
+<section id="dashboardView" class="view active">
+  <div class="hero">
+    <div><span>Aktuel bankroll</span><strong id="currentBankroll">0 kr.</strong></div>
+    <div id="heroProfit" class="hero-profit">0 kr.</div>
+  </div>
+
+  <div class="kpi-grid">
+    <article class="kpi"><span>Samlet profit</span><strong id="totalProfit">0 kr.</strong></article>
+    <article class="kpi"><span>ROI</span><strong id="roi">0%</strong></article>
+    <article class="kpi"><span>Hitrate</span><strong id="hitRate">0%</strong></article>
+    <article class="kpi"><span>Antal bets</span><strong id="betCount">0</strong></article>
+    <article class="kpi"><span>Vundne</span><strong id="wins">0</strong></article>
+    <article class="kpi"><span>Tabte</span><strong id="losses">0</strong></article>
+    <article class="kpi"><span>Aktuel streak</span><strong id="currentStreak">–</strong></article>
+    <article class="kpi"><span>Største drawdown</span><strong id="maxDrawdown">0 kr.</strong></article>
+  </div>
+
+  <section class="panel">
+    <div class="panel-head"><div><h2>Bankroll-udvikling</h2><p>Efter hvert afgjort bet</p></div></div>
+    <canvas id="bankrollChart" height="210"></canvas>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><div><h2>Månedlig profit</h2><p>Seneste 12 måneder</p></div></div>
+    <canvas id="monthlyChart" height="190"></canvas>
+  </section>
+
+  <div class="recent-grid">
+    <article class="panel recent"><span>Seneste 7 dage</span><strong id="profit7">0 kr.</strong></article>
+    <article class="panel recent"><span>Seneste 30 dage</span><strong id="profit30">0 kr.</strong></article>
+    <article class="panel recent"><span>Seneste 90 dage</span><strong id="profit90">0 kr.</strong></article>
+  </div>
+</section>
+
+<section id="newBetView" class="view">
+  <form id="betForm" class="panel form-grid">
+    <label>Dato<input id="date" type="date" required></label>
+    <label>Liga<select id="league" required></select></label>
+    <label class="full">Kamp<input id="match" type="text" placeholder="Liverpool - Arsenal" required></label>
+    <label>Marked<select id="market" required></select></label>
+    <label>Indsats (kr.)<input id="stake" type="number" min="0.01" step="0.01" inputmode="decimal" required></label>
+    <label>Odds<input id="odds" type="number" min="1.01" step="0.01" inputmode="decimal" required></label>
+    <label>Resultat<select id="result" required>
+      <option value="Pending">Pending</option><option value="Won">Vundet</option>
+      <option value="Lost">Tabt</option><option value="Push">Push</option><option value="Cash Out">Cash Out</option>
+    </select></label>
+    <label id="cashOutWrap" class="hidden">Udbetalt ved cash out<input id="cashOutReturn" type="number" min="0" step="0.01"></label>
+    <label class="full">Note<textarea id="note" rows="3" placeholder="Valgfri note"></textarea></label>
+    <button class="primary full" type="submit">Gem bet</button>
+  </form>
+</section>
+
+<section id="historyView" class="view">
+  <section class="panel">
+    <div class="filters">
+      <input id="searchInput" type="search" placeholder="Søg kamp, liga eller marked">
+      <select id="resultFilter"><option value="">Alle resultater</option><option value="Pending">Pending</option><option value="Won">Vundet</option><option value="Lost">Tabt</option><option value="Push">Push</option><option value="Cash Out">Cash Out</option></select>
+      <select id="leagueFilter"><option value="">Alle ligaer</option></select>
+      <select id="marketFilter"><option value="">Alle markeder</option></select>
+    </div>
+    <div id="historySummary" class="history-summary"></div>
+    <div id="historyList" class="history-list"></div>
+  </section>
+</section>
+
+<section id="marketsView" class="view">
+  <section class="panel"><div class="panel-head"><div><h2>Markeder</h2><p>Profit, ROI og hitrate</p></div></div><div id="marketStats" class="stats-list"></div></section>
+</section>
+
+<section id="leaguesView" class="view">
+  <section class="panel"><div class="panel-head"><div><h2>Ligaer</h2><p>Profit, ROI og hitrate</p></div></div><div id="leagueStats" class="stats-list"></div></section>
+</section>
+
+<section id="analysisView" class="view">
+  <div id="analysisCards" class="analysis-grid"></div>
+
+  <section class="panel">
+    <div class="panel-head"><div><h2>Oddsintervaller</h2><p>Se hvor du klarer dig bedst</p></div></div>
+    <div id="oddsStats" class="stats-list"></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><div><h2>Indstillinger og backup</h2><p>Data gemmes lokalt på enheden</p></div></div>
+    <form id="settingsForm" class="settings-form">
+      <label>Startbankroll<input id="startBankroll" type="number" min="0" step="0.01" required></label>
+      <div class="button-row">
+        <button type="button" class="secondary" id="exportBtn">Eksportér backup</button>
+        <label class="secondary file-label">Importér backup<input id="importInput" type="file" accept=".json" hidden></label>
+        <button type="button" class="danger" id="resetBtn">Slet alle data</button>
+      </div>
+      <button class="primary" type="submit">Gem indstillinger</button>
+    </form>
+  </section>
+</section>
+</main>
+
+<nav class="bottom-nav">
+<button data-view="dashboardView" class="active"><span>⌂</span><small>Dashboard</small></button>
+<button data-view="newBetView"><span>＋</span><small>Nyt bet</small></button>
+<button data-view="historyView"><span>☰</span><small>Historik</small></button>
+<button data-view="marketsView"><span>◎</span><small>Markeder</small></button>
+<button data-view="leaguesView"><span>⚽</span><small>Ligaer</small></button>
+<button data-view="analysisView"><span>▥</span><small>Analyse</small></button>
+</nav>
+</div>
+
+<dialog id="editDialog">
+<form id="editForm" class="dialog-card">
+  <h2>Redigér bet</h2>
+  <input id="editId" type="hidden">
+  <label>Dato<input id="editDate" type="date" required></label>
+  <label>Liga<select id="editLeague" required></select></label>
+  <label>Kamp<input id="editMatch" type="text" required></label>
+  <label>Marked<select id="editMarket" required></select></label>
+  <label>Indsats<input id="editStake" type="number" min="0.01" step="0.01" required></label>
+  <label>Odds<input id="editOdds" type="number" min="1.01" step="0.01" required></label>
+  <label>Resultat<select id="editResult"><option value="Pending">Pending</option><option value="Won">Vundet</option><option value="Lost">Tabt</option><option value="Push">Push</option><option value="Cash Out">Cash Out</option></select></label>
+  <label>Note<textarea id="editNote" rows="3"></textarea></label>
+  <div class="button-row"><button type="button" class="secondary" id="cancelEdit">Annullér</button><button class="primary" type="submit">Gem ændringer</button></div>
+</form>
+</dialog>
+
+<script src="app.js"></script>
+</body>
+</html>
