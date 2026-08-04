@@ -1,14 +1,14 @@
+import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+const supabase=createClient("https://swjjqzdsamyalnbzurnx.supabase.co","sb_publishable_QXkaV8HWhLKNfMUOBbNgsQ_1SlhK1Lw");
+let currentUser=null;
 const LEAGUES=["Premier League","La Liga","Serie A","Bundesliga","Ligue 1","Superliga","Champions League","Europa League","Conference League","Championship","Eredivisie","Primeira Liga","MLS","International","Other"];
 const MARKETS=["Home Win","Draw","Away Win","Double Chance 1X","Double Chance X2","Double Chance 12","Draw No Bet","Favourite Wins","Over 0.5 Goals","Over 1.5 Goals","Over 2.5 Goals","Over 3.5 Goals","Under 0.5 Goals","Under 1.5 Goals","Under 2.5 Goals","Under 3.5 Goals","BTTS Yes","BTTS No","Asian Handicap","European Handicap","Team Goals Over","Team Goals Under","Corners Over","Corners Under","Most Corners","Team Corners Over","Team Corners Under","Cards Over","Cards Under","Most Cards","Team Cards Over","Team Cards Under","Fouls Over","Fouls Under","Most Fouls","Shots Over","Shots Under","Most Shots","Shots on Target Over","Shots on Target Under","Most Shots on Target","Player to Score","Player Shots","Player Shots on Target","Player Assist","Other"];
 const $=id=>document.getElementById(id);
 const money=n=>new Intl.NumberFormat("da-DK",{style:"currency",currency:"DKK",maximumFractionDigits:2}).format(Number(n)||0);
 const pct=n=>`${((Number(n)||0)*100).toFixed(1).replace(".",",")}%`;
 const today=()=>new Date().toISOString().slice(0,10);
-let state=loadState();
-
-function loadState(){try{return JSON.parse(localStorage.getItem("btp-v2"))||migrate()}catch{return migrate()}}
-function migrate(){try{const old=JSON.parse(localStorage.getItem("btp"));if(old?.bets)return{settings:{startBankroll:old.settings?.start||3000},bets:old.bets}}catch{}return{settings:{startBankroll:3000},bets:[]}}
-function save(){localStorage.setItem("btp-v2",JSON.stringify(state))}
+let state={settings:{startBankroll:3000},bets:[]};
+function save(){}
 function settled(b){return["Won","Lost","Push","Cash Out"].includes(b.result)}
 function profit(b){if(b.result==="Won")return b.stake*(b.odds-1);if(b.result==="Lost")return-b.stake;if(b.result==="Push")return 0;if(b.result==="Cash Out")return(Number(b.cashOutReturn)||0)-b.stake;return 0}
 function cls(n){return n>0?"positive":n<0?"negative":"neutral"}
@@ -68,16 +68,32 @@ function renderAnalysis(){
   const cards=[["Bedste marked",best(m)],["Dårligste marked",worst(m)],["Bedste liga",best(l)],["Dårligste liga",worst(l)],["Længste winstreak",String(s.maxWin)],["Længste losestreak",String(s.maxLoss)],["Højeste bankroll",money(s.peak)],["Største drawdown",money(s.maxDD)]];
   $("analysisCards").innerHTML=cards.map(([a,b])=>`<article class="analysis-card"><span>${a}</span><strong>${esc(b)}</strong></article>`).join("");$("startBankroll").value=state.settings.startBankroll;renderStats("oddsBand","oddsStats")
 }
-$("betForm").addEventListener("submit",e=>{e.preventDefault();state.bets.push({id:crypto.randomUUID(),createdAt:new Date().toISOString(),date:$("date").value,league:$("league").value,match:$("match").value.trim(),market:$("market").value,stake:Number($("stake").value),odds:Number($("odds").value),result:$("result").value,note:$("note").value.trim(),cashOutReturn:Number($("cashOutReturn").value)||0});save();e.target.reset();$("date").value=today();$("result").value="Pending";$("cashOutWrap").classList.add("hidden");showView("historyView")});
+async function loadCloud(){
+ if(!currentUser)return; setSync("Synkroniserer…");
+ const [{data:rows,error:e1},{data:settingsRow,error:e2}]=await Promise.all([
+  supabase.from("bets").select("id,data,created_at").order("created_at",{ascending:true}),
+  supabase.from("user_settings").select("start_bankroll").maybeSingle()
+ ]);
+ if(e1||e2){console.error(e1||e2);setSync("Synk-fejl",true);return}
+ state.bets=(rows||[]).map(r=>({...r.data,id:r.id,createdAt:r.created_at}));
+ state.settings.startBankroll=Number(settingsRow?.start_bankroll??3000);
+ setSync("Synkroniseret"); renderActive();
+}
+function setSync(text,bad=false){const e=$("syncState");if(e){e.textContent=text;e.className=`sync-state ${bad?"negative":"positive"}`}}
+function renderActive(){const id=document.querySelector(".view.active")?.id||"dashboardView";if(id==="dashboardView")renderDashboard();if(id==="historyView")renderHistory();if(id==="marketsView")renderStats("market","marketStats");if(id==="leaguesView")renderStats("league","leagueStats");if(id==="analysisView")renderAnalysis()}
+async function handleSession(session){currentUser=session?.user||null;$("authScreen").classList.toggle("hidden",!!currentUser);$("app").classList.toggle("hidden",!currentUser);if(currentUser)await loadCloud()}
+$("authForm").addEventListener("submit",async e=>{e.preventDefault();$("authMessage").textContent="Logger ind…";const{error}=await supabase.auth.signInWithPassword({email:$("authEmail").value,password:$("authPassword").value});$("authMessage").textContent=error?error.message:""});
+$("signupBtn").addEventListener("click",async()=>{$("authMessage").textContent="Opretter konto…";const{error}=await supabase.auth.signUp({email:$("authEmail").value,password:$("authPassword").value});$("authMessage").textContent=error?error.message:"Konto oprettet. Tjek din e-mail, hvis du skal bekræfte den."});
+$("betForm").addEventListener("submit",async e=>{e.preventDefault();const data={date:$("date").value,league:$("league").value,match:$("match").value.trim(),market:$("market").value,stake:Number($("stake").value),odds:Number($("odds").value),result:$("result").value,note:$("note").value.trim(),cashOutReturn:Number($("cashOutReturn").value)||0};setSync("Gemmer…");const{error}=await supabase.from("bets").insert({user_id:currentUser.id,data});if(error){alert(error.message);setSync("Synk-fejl",true);return}e.target.reset();$("date").value=today();$("result").value="Pending";$("cashOutWrap").classList.add("hidden");await loadCloud();showView("historyView")});
 $("result").addEventListener("change",()=>$("cashOutWrap").classList.toggle("hidden",$("result").value!=="Cash Out"));
 document.querySelectorAll(".bottom-nav button").forEach(b=>b.addEventListener("click",()=>showView(b.dataset.view)));$("quickAdd").addEventListener("click",()=>showView("newBetView"));
 ["searchInput","resultFilter","leagueFilter","marketFilter"].forEach(id=>$(id).addEventListener(id==="searchInput"?"input":"change",renderHistory));
-window.deleteBet=id=>{if(confirm("Slet dette bet?")){state.bets=state.bets.filter(b=>b.id!==id);save();renderHistory()}};
+window.deleteBet=async id=>{if(!confirm("Slet dette bet?"))return;const{error}=await supabase.from("bets").delete().eq("id",id);if(error)return alert(error.message);await loadCloud()};
 window.editBet=id=>{const b=state.bets.find(x=>x.id===id);if(!b)return;$("editId").value=b.id;$("editDate").value=b.date;$("editLeague").value=b.league;$("editMatch").value=b.match;$("editMarket").value=b.market;$("editStake").value=b.stake;$("editOdds").value=b.odds;$("editResult").value=b.result;$("editNote").value=b.note||"";$("editDialog").showModal()};
 $("cancelEdit").addEventListener("click",()=>$("editDialog").close());
-$("editForm").addEventListener("submit",e=>{e.preventDefault();const b=state.bets.find(x=>x.id===$("editId").value);if(!b)return;b.date=$("editDate").value;b.league=$("editLeague").value;b.match=$("editMatch").value.trim();b.market=$("editMarket").value;b.stake=Number($("editStake").value);b.odds=Number($("editOdds").value);b.result=$("editResult").value;b.note=$("editNote").value.trim();save();$("editDialog").close();renderHistory()});
-$("settingsForm").addEventListener("submit",e=>{e.preventDefault();state.settings.startBankroll=Number($("startBankroll").value)||0;save();renderAnalysis();alert("Indstillinger gemt")});
-$("exportBtn").addEventListener("click",()=>{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(state,null,2)],{type:"application/json"}));a.download=`betting-tracker-backup-${today()}.json`;a.click()});
-$("importInput").addEventListener("change",async e=>{try{const d=JSON.parse(await e.target.files[0].text());if(!d.bets||!d.settings)throw 0;state=d;save();renderDashboard();alert("Backup importeret")}catch{alert("Filen kunne ikke importeres")}});
-$("resetBtn").addEventListener("click",()=>{if(confirm("Slet alle bets permanent?")){state={settings:{startBankroll:3000},bets:[]};save();renderAnalysis();renderDashboard()}});
-if("serviceWorker"in navigator)addEventListener("load",()=>navigator.serviceWorker.register("sw.js"));populate();$("date").value=today();renderDashboard();
+$("editForm").addEventListener("submit",async e=>{e.preventDefault();const id=$("editId").value,data={date:$("editDate").value,league:$("editLeague").value,match:$("editMatch").value.trim(),market:$("editMarket").value,stake:Number($("editStake").value),odds:Number($("editOdds").value),result:$("editResult").value,note:$("editNote").value.trim()};const{error}=await supabase.from("bets").update({data}).eq("id",id);if(error)return alert(error.message);$("editDialog").close();await loadCloud()});
+$("settingsForm").addEventListener("submit",async e=>{e.preventDefault();const start_bankroll=Number($("startBankroll").value)||0;const{error}=await supabase.from("user_settings").upsert({user_id:currentUser.id,start_bankroll},{onConflict:"user_id"});if(error)return alert(error.message);await loadCloud();alert("Startbankroll gemt")});
+$("refreshBtn").addEventListener("click",loadCloud);$("logoutBtn").addEventListener("click",()=>supabase.auth.signOut());
+document.addEventListener("visibilitychange",()=>{if(!document.hidden&&currentUser)loadCloud()});window.addEventListener("focus",()=>currentUser&&loadCloud());
+supabase.auth.onAuthStateChange((_e,session)=>handleSession(session));
+if("serviceWorker"in navigator)addEventListener("load",()=>navigator.serviceWorker.register("sw.js"));populate();$("date").value=today();const{data:{session}}=await supabase.auth.getSession();await handleSession(session);

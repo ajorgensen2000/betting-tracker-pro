@@ -13,10 +13,17 @@
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<div id="app">
+<div id="authScreen" class="auth-screen">
+<section class="auth-card">
+<div class="auth-logo">BTP</div><p class="eyebrow">BETTING TRACKER PRO</p>
+<h1>Log ind</h1><p class="auth-copy">Brug samme konto på Mac og iPhone. Dine bets synkroniseres automatisk.</p>
+<form id="authForm"><label>E-mail<input id="authEmail" type="email" required></label><label>Adgangskode<input id="authPassword" type="password" minlength="6" required></label><button class="primary" type="submit">Log ind</button><button id="signupBtn" class="secondary" type="button">Opret konto</button></form><p id="authMessage" class="message"></p>
+</section></div>
+
+<div id="app" class="hidden">
 <header class="topbar">
   <div><p class="eyebrow">BETTING TRACKER PRO</p><h1 id="pageTitle">Dashboard</h1></div>
-  <button id="quickAdd" class="quick-add" aria-label="Nyt bet">＋</button>
+  <div class="top-actions"><span id="syncState" class="sync-state">Synkroniseret</span><button id="quickAdd" class="quick-add" aria-label="Nyt bet">＋</button></div>
 </header>
 
 <main>
@@ -105,12 +112,8 @@
     <div class="panel-head"><div><h2>Indstillinger og backup</h2><p>Data gemmes lokalt på enheden</p></div></div>
     <form id="settingsForm" class="settings-form">
       <label>Startbankroll<input id="startBankroll" type="number" min="0" step="0.01" required></label>
-      <div class="button-row">
-        <button type="button" class="secondary" id="exportBtn">Eksportér backup</button>
-        <label class="secondary file-label">Importér backup<input id="importInput" type="file" accept=".json" hidden></label>
-        <button type="button" class="danger" id="resetBtn">Slet alle data</button>
-      </div>
-      <button class="primary" type="submit">Gem indstillinger</button>
+      <button class="primary" type="submit">Gem startbankroll</button>
+      <div class="button-row"><button type="button" class="secondary" id="refreshBtn">Synkronisér nu</button><button type="button" class="danger" id="logoutBtn">Log ud</button></div>
     </form>
   </section>
 </section>
@@ -142,6 +145,6 @@
 </form>
 </dialog>
 
-<script src="app.js"></script>
+<script type="module" src="app.js"></script>
 </body>
 </html>
