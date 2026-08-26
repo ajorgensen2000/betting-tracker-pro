@@ -6,8 +6,8 @@
 <meta name="theme-color" content="#07101f">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Bet Tracker">
-<title>Betting Tracker Pro</title>
+<meta name="apple-mobile-web-app-title" content="AJ Bet tracker">
+<title>AJ Bet tracker</title>
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="stylesheet" href="styles.css">
@@ -15,7 +15,7 @@
 <body>
 <div id="authScreen" class="auth-screen">
 <section class="auth-card">
-<div class="auth-logo">BTP</div><p class="eyebrow">BETTING TRACKER PRO</p>
+<div class="auth-logo">AJ</div><p class="eyebrow">BETTING TRACKER PRO</p>
 <h1>Log ind</h1><p class="auth-copy">Brug samme konto på Mac og iPhone. Dine bets synkroniseres automatisk.</p>
 <form id="authForm"><label>E-mail<input id="authEmail" type="email" required></label><label>Adgangskode<input id="authPassword" type="password" minlength="6" required></label><button class="primary" type="submit">Log ind</button><button id="signupBtn" class="secondary" type="button">Opret konto</button></form><p id="authMessage" class="message"></p>
 </section></div>
@@ -40,7 +40,11 @@
     <article class="kpi"><span>Antal bets</span><strong id="betCount">0</strong></article>
     <article class="kpi"><span>Vundne</span><strong id="wins">0</strong></article>
     <article class="kpi"><span>Tabte</span><strong id="losses">0</strong></article>
+    <article class="kpi"><span>Gns. odds</span><strong id="avgOdds">0,00</strong></article>
+    <article class="kpi"><span>Næste indsats</span><strong id="nextStake">0 kr.</strong></article>
     <article class="kpi"><span>Aktuel streak</span><strong id="currentStreak">–</strong></article>
+    <article class="kpi"><span>Længste W/L</span><strong id="longestStreak">0 / 0</strong></article>
+    <article class="kpi"><span>Højeste / laveste</span><strong id="bankrollRange">0 / 0</strong></article>
     <article class="kpi"><span>Største drawdown</span><strong id="maxDrawdown">0 kr.</strong></article>
   </div>
 
@@ -64,16 +68,20 @@
 <section id="newBetView" class="view">
   <form id="betForm" class="panel form-grid">
     <label>Dato<input id="date" type="date" required></label>
+    <label>Bettype<select id="betType" required></select></label>
     <label>Liga<select id="league" required></select></label>
     <label class="full">Kamp<input id="match" type="text" placeholder="Liverpool - Arsenal" required></label>
     <label>Marked<select id="market" required></select></label>
     <label>Indsats (kr.)<input id="stake" type="number" min="0.01" step="0.01" inputmode="decimal" required></label>
     <label>Odds<input id="odds" type="number" min="1.01" step="0.01" inputmode="decimal" required></label>
-    <label>Resultat<select id="result" required>
-      <option value="Pending">Pending</option><option value="Won">Vundet</option>
-      <option value="Lost">Tabt</option><option value="Push">Push</option><option value="Cash Out">Cash Out</option>
-    </select></label>
+    <label>Resultat<select id="result" required></select></label>
     <label id="cashOutWrap" class="hidden">Udbetalt ved cash out<input id="cashOutReturn" type="number" min="0" step="0.01"></label>
+
+    <section id="legsSection" class="full bet-legs-section hidden">
+      <div class="panel-head compact"><div><h2>Ben i byg væddemål</h2><p>Tilføj hvert valg fra samme kamp</p></div><button id="addLegBtn" class="secondary mini" type="button">+ Tilføj ben</button></div>
+      <div id="legsList" class="legs-list"></div>
+    </section>
+
     <label class="full">Note<textarea id="note" rows="3" placeholder="Valgfri note"></textarea></label>
     <button class="primary full" type="submit">Gem bet</button>
   </form>
@@ -83,9 +91,10 @@
   <section class="panel">
     <div class="filters">
       <input id="searchInput" type="search" placeholder="Søg kamp, liga eller marked">
-      <select id="resultFilter"><option value="">Alle resultater</option><option value="Pending">Pending</option><option value="Won">Vundet</option><option value="Lost">Tabt</option><option value="Push">Push</option><option value="Cash Out">Cash Out</option></select>
+      <select id="resultFilter"></select>
       <select id="leagueFilter"><option value="">Alle ligaer</option></select>
       <select id="marketFilter"><option value="">Alle markeder</option></select>
+      <select id="betTypeFilter"><option value="">Alle bettyper</option></select>
     </div>
     <div id="historySummary" class="history-summary"></div>
     <div id="historyList" class="history-list"></div>
@@ -109,10 +118,16 @@
   </section>
 
   <section class="panel">
-    <div class="panel-head"><div><h2>Indstillinger og backup</h2><p>Data gemmes lokalt på enheden</p></div></div>
+    <div class="panel-head"><div><h2>Byg væddemål – benanalyse</h2><p>Hvilke typer ben indgår i dine vindende og tabende byg væddemål</p></div></div>
+    <div id="legStats" class="stats-list"></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><div><h2>Indstillinger og backup</h2><p>Startbankroll og automatisk indsats</p></div></div>
     <form id="settingsForm" class="settings-form">
       <label>Startbankroll<input id="startBankroll" type="number" min="0" step="0.01" required></label>
-      <button class="primary" type="submit">Gem startbankroll</button>
+      <label>Standard indsats (%)<input id="stakePercent" type="number" min="0.1" max="100" step="0.1" required></label>
+      <button class="primary" type="submit">Gem indstillinger</button>
       <div class="button-row"><button type="button" class="secondary" id="refreshBtn">Synkronisér nu</button><button type="button" class="danger" id="logoutBtn">Log ud</button></div>
     </form>
   </section>
@@ -134,12 +149,13 @@
   <h2>Redigér bet</h2>
   <input id="editId" type="hidden">
   <label>Dato<input id="editDate" type="date" required></label>
+  <label>Bettype<select id="editBetType" required></select></label>
   <label>Liga<select id="editLeague" required></select></label>
   <label>Kamp<input id="editMatch" type="text" required></label>
   <label>Marked<select id="editMarket" required></select></label>
   <label>Indsats<input id="editStake" type="number" min="0.01" step="0.01" required></label>
   <label>Odds<input id="editOdds" type="number" min="1.01" step="0.01" required></label>
-  <label>Resultat<select id="editResult"><option value="Pending">Pending</option><option value="Won">Vundet</option><option value="Lost">Tabt</option><option value="Push">Push</option><option value="Cash Out">Cash Out</option></select></label>
+  <label>Resultat<select id="editResult"></select></label>
   <label>Note<textarea id="editNote" rows="3"></textarea></label>
   <div class="button-row"><button type="button" class="secondary" id="cancelEdit">Annullér</button><button class="primary" type="submit">Gem ændringer</button></div>
 </form>

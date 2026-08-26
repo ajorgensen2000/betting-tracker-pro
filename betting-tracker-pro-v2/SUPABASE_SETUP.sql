@@ -9,6 +9,7 @@ create table if not exists public.bets (
 create table if not exists public.user_settings (
  user_id uuid primary key references auth.users(id) on delete cascade,
  start_bankroll numeric(12,2) not null default 3000 check(start_bankroll>=0),
+ stake_percentage numeric(6,3) not null default 2 check(stake_percentage>0 and stake_percentage<=100),
  updated_at timestamptz not null default now()
 );
 alter table public.bets enable row level security;

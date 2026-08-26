@@ -1,6 +1,6 @@
 {
-  "name": "Betting Tracker Pro",
-  "short_name": "Bet Tracker",
+  "name": "AJ Bet tracker",
+  "short_name": "AJ Bet",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#07101f",
