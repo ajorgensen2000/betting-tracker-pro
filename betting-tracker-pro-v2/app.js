@@ -64,22 +64,20 @@ function qualifiesForGoal(b){const o=Number(b.odds);return settled(b)&&o>=GOAL_M
 function unitProfit(b){const stake=Number(b.stake)||0;return stake?profit(b)/stake:0}
 function goalPeriodData(){
   const currentStart=periodStartFor(new Date()),periods=[];
-  for(let i=7;i>=0;i--){const start=new Date(currentStart);start.setDate(start.getDate()-i*GOAL_PERIOD_DAYS);periods.push({start,key:dateKey(start),label:periodLabel(start),units:0,trackedBets:0,trackedProfit:0,allProfit:0})}
+  for(let i=7;i>=0;i--){const start=new Date(currentStart);start.setDate(start.getDate()-i*GOAL_PERIOD_DAYS);periods.push({start,key:dateKey(start),label:periodLabel(start),units:0,trackedBets:0,wins:0,losses:0,trackedProfit:0,allProfit:0})}
   const byKey=new Map(periods.map(p=>[p.key,p]));
-  state.bets.forEach(b=>{if(!b.date)return;const d=dateOnly(b.date);if(!d)return;const key=dateKey(periodStartFor(d)),p=byKey.get(key);if(!p)return;p.allProfit+=profit(b);if(qualifiesForGoal(b)){p.trackedBets++;p.trackedProfit+=profit(b);p.units+=unitProfit(b)}});
+  state.bets.forEach(b=>{if(!b.date)return;const d=dateOnly(b.date);if(!d)return;const key=dateKey(periodStartFor(d)),p=byKey.get(key);if(!p)return;p.allProfit+=profit(b);if(qualifiesForGoal(b)){p.trackedBets++;if(b.result==="Won")p.wins++;if(b.result==="Lost")p.losses++;p.trackedProfit+=profit(b);p.units+=unitProfit(b)}});
   return periods
 }
 function goalPeriodStats(){
   const periods=goalPeriodData(),current=periods[periods.length-1]||{units:0,trackedBets:0,trackedProfit:0,allProfit:0};
   const missing=Math.max(0,GOAL_TARGET_UNITS-current.units),complete=current.units>=GOAL_TARGET_UNITS-1e-9;
-  const eligibleDates=state.bets.filter(b=>b.date&&qualifiesForGoal(b)).map(b=>dateOnly(b.date)).filter(Boolean).sort((a,b)=>a-b);
-  const firstPeriod=eligibleDates.length?periodStartFor(eligibleDates[0]):null;
-  const completedPeriods=periods.slice(0,-1).filter(p=>!firstPeriod||p.start>=firstPeriod);
-  const achieved=completedPeriods.filter(p=>p.units>=GOAL_TARGET_UNITS-1e-9).length;
-  const rate=completedPeriods.length?achieved/completedPeriods.length:null;
+  const ratePeriods=periods;
+  const achieved=ratePeriods.filter(p=>p.units>=GOAL_TARGET_UNITS-1e-9).length;
+  const rate=ratePeriods.length?achieved/ratePeriods.length:null;
   let streak=0,idx=periods.length-1;if(!complete)idx--;
   for(;idx>=0;idx--){if(periods[idx].units>=GOAL_TARGET_UNITS-1e-9)streak++;else break}
-  return{periods,current,missing,complete,streak,rate,trackedPeriods:completedPeriods.length,achieved}
+  return{periods,current,missing,complete,streak,rate,trackedPeriods:ratePeriods.length,achieved}
 }
 function oddsBand(o){o=Number(o);return o<1.5?"<1.50":o<1.7?"1.50-1.69":o<2?"1.70-1.99":o<2.5?"2.00-2.49":"2.50+"}
 function aggregate(field){
@@ -125,7 +123,9 @@ function renderDashboard(){
   $("weeklyQualifiedWins").textContent=`${g.current.units>=0?"+":""}${g.current.units.toFixed(2).replace(".",",")} units`;$("weeklyQualifiedWins").className=cls(g.current.units);
   $("weeklyProfit").textContent=money(g.current.trackedProfit);$("weeklyProfit").className=cls(g.current.trackedProfit);
   $("weeklyTrackedBets").textContent=String(g.current.trackedBets);
-  $("weeklyGoalStreak").textContent=`${g.streak} ${g.streak===1?"periode":"perioder"}`;$("weeklyGoalRate").textContent=g.rate===null?"–":`${Math.round(g.rate*100)}% (${g.achieved}/${g.trackedPeriods})`;
+  $("weeklyWins").textContent=String(g.current.wins||0);
+  $("weeklyLosses").textContent=String(g.current.losses||0);
+  $("weeklyGoalStreak").textContent=`${g.streak} ${g.streak===1?"periode":"perioder"}`;$("weeklyGoalRate").textContent=g.rate===null?"–":`${(g.rate*100).toFixed(g.rate*100%1?1:0).replace(".",",")}% (${g.achieved}/8)`;
   drawUnitGoal($("weeklyGoalChart"),g.periods);drawBars($("weeklyProfitChart"),g.periods.map(p=>({label:p.label,value:p.allProfit})));
   drawLine($("bankrollChart"),[{label:"Start",value:Number(state.settings.startBankroll)},...s.points.map((p,i)=>({label:String(i+1),value:p.value}))]);drawBars($("monthlyChart"),monthly())
 }

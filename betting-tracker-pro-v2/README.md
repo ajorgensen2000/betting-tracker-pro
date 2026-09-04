@@ -40,3 +40,10 @@ Upload derefter filerne til den samme webhosting/GitHub-mappe som den nuværende
 - Grafen viser de seneste 8 14-dagesperioder med mållinje ved +2,80u.
 - Separat graf viser samlet profit/tab for alle bets i de samme 14-dagesperioder.
 - Ingen databaseændring er nødvendig; funktionen beregnes fra eksisterende bets.
+
+
+## Nyt i V5 – W/L og 8-perioders succesrate
+- 14-dagesmålet viser nu W og L for kvalificerende bets i den aktuelle periode.
+- W tæller resultatet Won, L tæller resultatet Lost; kun bets med odds 1,50–2,00 indgår.
+- Succesraten beregnes nu konsekvent over de samme seneste 8 14-dagesperioder som grafen, fx 3/8 = 37,5%.
+- Selve målet er uændret: først gennemført ved mindst +2,80 units netto.
