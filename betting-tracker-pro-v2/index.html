@@ -48,6 +48,27 @@
     <article class="kpi"><span>Største drawdown</span><strong id="maxDrawdown">0 kr.</strong></article>
   </div>
 
+  <section class="panel weekly-goal-panel">
+    <div class="panel-head"><div><h2>14-dagesmål</h2><p>+2,80 units · kun afgjorte bets med odds 1,50–2,00 · mandag til 2. søndag</p></div><strong id="weeklyGoalBadge" class="goal-badge">+0,00u / +2,80u</strong></div>
+    <div class="goal-progress" aria-label="Fremgang mod 14-dagesmål"><div id="weeklyGoalFill" class="goal-progress-fill"></div></div>
+    <div class="weekly-goal-grid">
+      <div><small>Status</small><strong id="weeklyGoalStatus">Mangler +2,80u</strong></div>
+      <div><small>Aktuelt</small><strong id="weeklyQualifiedWins">+0,00 units</strong></div>
+      <div><small>Tracked bets</small><strong id="weeklyTrackedBets">0</strong></div>
+      <div><small>P/L · tracked bets</small><strong id="weeklyProfit">0 kr.</strong></div>
+      <div><small>Målstreak</small><strong id="weeklyGoalStreak">0 perioder</strong></div>
+      <div><small>Succesrate</small><strong id="weeklyGoalRate">–</strong></div>
+      <div><small>Tracking-regel</small><strong>Odds 1,50–2,00</strong></div>
+    </div>
+    <div class="panel-head goal-chart-head"><div><h2>Seneste 8 perioder</h2><p>Units pr. 14 dage · mållinje ved +2,80</p></div></div>
+    <canvas id="weeklyGoalChart" height="190"></canvas>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><div><h2>14-dages profit</h2><p>Seneste 8 perioder · alle bets</p></div></div>
+    <canvas id="weeklyProfitChart" height="190"></canvas>
+  </section>
+
   <section class="panel">
     <div class="panel-head"><div><h2>Bankroll-udvikling</h2><p>Efter hvert afgjort bet</p></div></div>
     <canvas id="bankrollChart" height="210"></canvas>

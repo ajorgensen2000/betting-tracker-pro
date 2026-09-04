@@ -9,6 +9,8 @@ const RESULTS=["Pending","Won","Lost","Push","Half Win","Half Loss","Cash Out","
 const PERIODS=["Fuldtid","1. halvleg","2. halvleg","Kamp"];
 const LEG_CATEGORIES=["Resultat","Mål","BTTS","Handicap","Hjørnespark","Kort","Frispark","Skud","Skud på mål","Spiller","Tacklinger","Kombinationsspil","Andet"];
 const MARKETS=["Home Win","Draw","Away Win","Double Chance 1X","Double Chance X2","Double Chance 12","Draw No Bet","Favourite Wins","Over 0.5 Goals","Over 1.5 Goals","Over 2.5 Goals","Over 3.5 Goals","Under 0.5 Goals","Under 1.5 Goals","Under 2.5 Goals","Under 3.5 Goals","BTTS Yes","BTTS No","Asian Handicap","European Handicap","Team Goals Over","Team Goals Under","Corners Over","Corners Under","Most Corners","Team Corners Over","Team Corners Under","Cards Over","Cards Under","Most Cards","Team Cards Over","Team Cards Under","Fouls Over","Fouls Under","Most Fouls","Shots Over","Shots Under","Most Shots","Shots on Target Over","Shots on Target Under","Most Shots on Target","Player to Score","Player Shots","Player Shots on Target","Player Assist","Player Tackles","Bet Builder","Other"];
+const GOAL_TARGET_UNITS=2.8, GOAL_MIN_ODDS=1.5, GOAL_MAX_ODDS=2.0, GOAL_PERIOD_DAYS=14;
+const GOAL_EPOCH=new Date("2026-08-31T12:00:00");
 
 const $=id=>document.getElementById(id);
 const money=n=>new Intl.NumberFormat("da-DK",{style:"currency",currency:"DKK",maximumFractionDigits:2}).format(Number(n)||0);
@@ -50,6 +52,35 @@ function stats(){
 function recent(days){return state.bets.filter(b=>(Date.now()-new Date(b.date+"T12:00:00"))/86400000<=days).reduce((s,b)=>s+profit(b),0)}
 function monthKey(d){return d?.slice(0,7)||""}
 function monthly(){const m={};state.bets.forEach(b=>{if(!b.date)return;const k=monthKey(b.date);m[k]=(m[k]||0)+profit(b)});const keys=Object.keys(m).sort().slice(-12);return keys.map(k=>({label:k,value:m[k]}))}
+function dateOnly(s){return s?new Date(`${s}T12:00:00`):null}
+function periodStartFor(d){
+  const x=new Date(d);x.setHours(12,0,0,0);
+  const diffDays=Math.floor((x-GOAL_EPOCH)/86400000),idx=Math.floor(diffDays/GOAL_PERIOD_DAYS);
+  const start=new Date(GOAL_EPOCH);start.setDate(start.getDate()+idx*GOAL_PERIOD_DAYS);return start
+}
+function dateKey(d){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,"0"),day=String(d.getDate()).padStart(2,"0");return `${y}-${m}-${day}`}
+function periodLabel(start){const end=new Date(start);end.setDate(end.getDate()+GOAL_PERIOD_DAYS-1);const f=d=>`${d.getDate()}/${d.getMonth()+1}`;return `${f(start)}–${f(end)}`}
+function qualifiesForGoal(b){const o=Number(b.odds);return settled(b)&&o>=GOAL_MIN_ODDS&&o<=GOAL_MAX_ODDS}
+function unitProfit(b){const stake=Number(b.stake)||0;return stake?profit(b)/stake:0}
+function goalPeriodData(){
+  const currentStart=periodStartFor(new Date()),periods=[];
+  for(let i=7;i>=0;i--){const start=new Date(currentStart);start.setDate(start.getDate()-i*GOAL_PERIOD_DAYS);periods.push({start,key:dateKey(start),label:periodLabel(start),units:0,trackedBets:0,trackedProfit:0,allProfit:0})}
+  const byKey=new Map(periods.map(p=>[p.key,p]));
+  state.bets.forEach(b=>{if(!b.date)return;const d=dateOnly(b.date);if(!d)return;const key=dateKey(periodStartFor(d)),p=byKey.get(key);if(!p)return;p.allProfit+=profit(b);if(qualifiesForGoal(b)){p.trackedBets++;p.trackedProfit+=profit(b);p.units+=unitProfit(b)}});
+  return periods
+}
+function goalPeriodStats(){
+  const periods=goalPeriodData(),current=periods[periods.length-1]||{units:0,trackedBets:0,trackedProfit:0,allProfit:0};
+  const missing=Math.max(0,GOAL_TARGET_UNITS-current.units),complete=current.units>=GOAL_TARGET_UNITS-1e-9;
+  const eligibleDates=state.bets.filter(b=>b.date&&qualifiesForGoal(b)).map(b=>dateOnly(b.date)).filter(Boolean).sort((a,b)=>a-b);
+  const firstPeriod=eligibleDates.length?periodStartFor(eligibleDates[0]):null;
+  const completedPeriods=periods.slice(0,-1).filter(p=>!firstPeriod||p.start>=firstPeriod);
+  const achieved=completedPeriods.filter(p=>p.units>=GOAL_TARGET_UNITS-1e-9).length;
+  const rate=completedPeriods.length?achieved/completedPeriods.length:null;
+  let streak=0,idx=periods.length-1;if(!complete)idx--;
+  for(;idx>=0;idx--){if(periods[idx].units>=GOAL_TARGET_UNITS-1e-9)streak++;else break}
+  return{periods,current,missing,complete,streak,rate,trackedPeriods:completedPeriods.length,achieved}
+}
 function oddsBand(o){o=Number(o);return o<1.5?"<1.50":o<1.7?"1.50-1.69":o<2?"1.70-1.99":o<2.5?"2.00-2.49":"2.50+"}
 function aggregate(field){
   const map={};state.bets.forEach(b=>{const key=field==="oddsBand"?oddsBand(b.odds):(b[field]||"Ukendt");map[key]??={name:key,bets:0,wins:0,losses:0,pushes:0,stake:0,profit:0,odds:0};const x=map[key];x.bets++;x.wins+=b.result==="Won";x.losses+=b.result==="Lost";x.pushes+=b.result==="Push";x.stake+=settled(b)?Number(b.stake)||0:0;x.profit+=profit(b);x.odds+=Number(b.odds)||0});
@@ -88,11 +119,28 @@ function renderDashboard(){
   const next=s.bank*(Number(state.settings.stakePercent)||2)/100;
   [["totalProfit",money(s.totalProfit),s.totalProfit],["roi",pct(s.roi)],["hitRate",pct(s.hit)],["betCount",s.count],["wins",s.wins],["losses",s.losses],["avgOdds",s.avg.toFixed(2).replace(".",",")],["nextStake",money(next)],["currentStreak",s.currentWin?`W${s.currentWin}`:s.currentLoss?`L${s.currentLoss}`:"–"],["longestStreak",`${s.maxWin} / ${s.maxLoss}`],["bankrollRange",`${money(s.peak)} / ${money(s.minBank)}`],["maxDrawdown",money(s.maxDD),s.maxDD]].forEach(([id,val,n])=>{const e=$(id);e.textContent=val;if(n!==undefined)e.className=cls(n)});
   [7,30,90].forEach(d=>{const n=recent(d),e=$("profit"+d);e.textContent=money(n);e.className=cls(n)});
+  const g=goalPeriodStats(),progress=Math.max(0,Math.min(100,g.current.units/GOAL_TARGET_UNITS*100));
+  $("weeklyGoalBadge").textContent=`${g.current.units>=0?"+":""}${g.current.units.toFixed(2).replace(".",",")}u / +${GOAL_TARGET_UNITS.toFixed(2).replace(".",",")}u`;$("weeklyGoalFill").style.width=`${progress}%`;
+  $("weeklyGoalStatus").textContent=g.complete?"✓ 14-dagesmål gennemført":`Mangler +${g.missing.toFixed(2).replace(".",",")}u`;$("weeklyGoalStatus").className=g.complete?"positive":"";
+  $("weeklyQualifiedWins").textContent=`${g.current.units>=0?"+":""}${g.current.units.toFixed(2).replace(".",",")} units`;$("weeklyQualifiedWins").className=cls(g.current.units);
+  $("weeklyProfit").textContent=money(g.current.trackedProfit);$("weeklyProfit").className=cls(g.current.trackedProfit);
+  $("weeklyTrackedBets").textContent=String(g.current.trackedBets);
+  $("weeklyGoalStreak").textContent=`${g.streak} ${g.streak===1?"periode":"perioder"}`;$("weeklyGoalRate").textContent=g.rate===null?"–":`${Math.round(g.rate*100)}% (${g.achieved}/${g.trackedPeriods})`;
+  drawUnitGoal($("weeklyGoalChart"),g.periods);drawBars($("weeklyProfitChart"),g.periods.map(p=>({label:p.label,value:p.allProfit})));
   drawLine($("bankrollChart"),[{label:"Start",value:Number(state.settings.startBankroll)},...s.points.map((p,i)=>({label:String(i+1),value:p.value}))]);drawBars($("monthlyChart"),monthly())
 }
 function canvasSetup(c,h){const d=devicePixelRatio||1,w=c.clientWidth;c.width=w*d;c.height=h*d;const x=c.getContext("2d");x.scale(d,d);x.clearRect(0,0,w,h);return{x,w,h}}
 function drawLine(c,pts){const{x,w,h}=canvasSetup(c,210);x.strokeStyle="#293951";x.lineWidth=1;for(let i=0;i<4;i++){let y=20+i*(h-40)/3;x.beginPath();x.moveTo(0,y);x.lineTo(w,y);x.stroke()}if(pts.length<2){x.fillStyle="#94a3b8";x.fillText("Tilføj et afgjort bet for at se grafen",15,h/2);return}const vals=pts.map(p=>p.value),min=Math.min(...vals),max=Math.max(...vals),range=max-min||1;x.strokeStyle="#3f8cff";x.lineWidth=3;x.beginPath();pts.forEach((p,i)=>{const px=10+i/(pts.length-1)*(w-20),py=h-18-(p.value-min)/range*(h-36);i?x.lineTo(px,py):x.moveTo(px,py)});x.stroke()}
-function drawBars(c,pts){const{x,w,h}=canvasSetup(c,190);if(!pts.length){x.fillStyle="#94a3b8";x.fillText("Ingen månedlig data endnu",15,h/2);return}const max=Math.max(...pts.map(p=>Math.abs(p.value)),1),gap=8,bw=Math.max(12,(w-gap*(pts.length+1))/pts.length),zero=h/2;x.strokeStyle="#293951";x.beginPath();x.moveTo(0,zero);x.lineTo(w,zero);x.stroke();pts.forEach((p,i)=>{const bh=Math.abs(p.value)/max*(h/2-28),px=gap+i*(bw+gap),py=p.value>=0?zero-bh:zero;x.fillStyle=p.value>=0?"#22c55e":"#ef4444";x.fillRect(px,py,bw,bh);x.fillStyle="#94a3b8";x.font="10px sans-serif";x.fillText(p.label.slice(5),px,h-7)})}
+function drawBars(c,pts){const{x,w,h}=canvasSetup(c,190);if(!pts.length){x.fillStyle="#94a3b8";x.fillText("Ingen månedlig data endnu",15,h/2);return}const max=Math.max(...pts.map(p=>Math.abs(p.value)),1),gap=8,bw=Math.max(12,(w-gap*(pts.length+1))/pts.length),zero=h/2;x.strokeStyle="#293951";x.beginPath();x.moveTo(0,zero);x.lineTo(w,zero);x.stroke();pts.forEach((p,i)=>{const bh=Math.abs(p.value)/max*(h/2-28),px=gap+i*(bw+gap),py=p.value>=0?zero-bh:zero;x.fillStyle=p.value>=0?"#22c55e":"#ef4444";x.fillRect(px,py,bw,bh);x.fillStyle="#94a3b8";x.font="10px sans-serif";const lbl=/^\d{4}-\d{2}$/.test(p.label)?p.label.slice(5):String(p.label).split("–")[0];x.fillText(lbl,px,h-7)})}
+function drawUnitGoal(c,periods){
+  const{x,w,h}=canvasSetup(c,190);if(!periods.length)return;
+  const vals=periods.map(p=>p.units),top=14,bottom=32,left=8,right=8,plotH=h-top-bottom;
+  const maxY=Math.max(GOAL_TARGET_UNITS,...vals,0.5),minY=Math.min(0,...vals),pad=(maxY-minY||1)*0.08,hi=maxY+pad,lo=minY-pad,range=hi-lo||1;
+  const yFor=v=>top+(hi-v)/range*plotH,zeroY=yFor(0),gap=7,bw=Math.max(12,(w-left-right-gap*(periods.length-1))/periods.length);
+  x.strokeStyle="#293951";x.lineWidth=1;[lo,0,GOAL_TARGET_UNITS,hi].forEach(v=>{const y=yFor(v);x.beginPath();x.moveTo(left,y);x.lineTo(w-right,y);x.stroke()});
+  periods.forEach((p,i)=>{const px=left+i*(bw+gap),vy=yFor(p.units),py=Math.min(zeroY,vy),bh=Math.max(1,Math.abs(vy-zeroY));x.fillStyle=p.units>=GOAL_TARGET_UNITS?"#22c55e":p.units<0?"#ef4444":"#3f8cff";x.fillRect(px,py,bw,bh);x.fillStyle="#94a3b8";x.font="9px sans-serif";x.fillText(p.label.split("–")[0],px,h-9);if(Math.abs(p.units)>.005){x.fillStyle="#f8fafc";x.font="bold 9px sans-serif";const t=`${p.units>=0?"+":""}${p.units.toFixed(1)}u`;x.fillText(t,px,Math.max(11,Math.min(h-bottom-2,vy+(p.units<0?12:-4))))}});
+  const targetY=yFor(GOAL_TARGET_UNITS);x.save();x.setLineDash([6,5]);x.strokeStyle="#f59e0b";x.lineWidth=2;x.beginPath();x.moveTo(left,targetY);x.lineTo(w-right,targetY);x.stroke();x.restore();x.fillStyle="#f59e0b";x.font="10px sans-serif";x.fillText("Mål: +2,8u",left+4,Math.max(11,targetY-5))
+}
 
 function newLeg(data={}){
   const id=++legCounter;
