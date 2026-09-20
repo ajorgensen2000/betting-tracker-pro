@@ -47,3 +47,12 @@ Upload derefter filerne til den samme webhosting/GitHub-mappe som den nuværende
 - W tæller resultatet Won, L tæller resultatet Lost; kun bets med odds 1,50–2,00 indgår.
 - Succesraten beregnes nu konsekvent over de samme seneste 8 14-dagesperioder som grafen, fx 3/8 = 37,5%.
 - Selve målet er uændret: først gennemført ved mindst +2,80 units netto.
+
+## V6 – Scan betslip
+- Nyt felt under **Nyt bet → Scan betslip**.
+- Upload ét eller flere screenshots fra en betslip.
+- OCR kører i browseren via Tesseract.js og forsøger at finde kamp, liga, samlet odds og alle ben.
+- Appen skifter automatisk til **Byg væddemål** og opretter de fundne ben.
+- Resultatet skal kontrolleres før bettet gemmes; OCR kan læse forkert.
+- Screenshots gemmes ikke i Supabase af denne funktion. Kun de felter, du gemmer som bet, synkroniseres.
+- Ingen Supabase-migration er nødvendig til V6.

@@ -168,6 +168,83 @@ function toggleBuilder(){
 }
 function legSummary(leg){const line=leg.line!==null&&leg.line!==undefined&&leg.line!==""?` ${leg.line}`:"";const subj=leg.subject?` · ${esc(leg.subject)}`:"";const period=leg.period&&leg.period!=="Fuldtid"?` · ${esc(leg.period)}`:"";return`<div class="history-leg"><strong>${esc(leg.market||leg.category||"Ben")}</strong><span>${esc(leg.selection||"")}${line}${subj}${period}</span></div>`}
 
+// V6: betslip scanner. OCR runs locally in the browser with Tesseract.js.
+const SCAN_NOISE=["session","ansvarsfuldt spil","saldo","vis muligheder","byg væddemål","beløb","gevinst boost","boost nu","placér væddemål","placer væddemål","væddemålskreditter","sport","live","casino"];
+function cleanOcrLine(line){return String(line||"").replace(/[•●○◦×✕]/g," ").replace(/\s+/g," ").replace(/^[-–—|]+|[-–—|]+$/g,"").trim()}
+function isScanNoise(line){const l=line.toLowerCase();return !l||l.length<2||SCAN_NOISE.some(x=>l===x||l.startsWith(x+" "))||/^\d{1,2}[.:]\d{2}$/.test(l)||/^\d{1,2}\s*(aug|sep|okt|nov|dec|jan|feb|mar|apr|maj|jun|jul)\b/.test(l)}
+function isMarketDescriptor(line){return /^(hjemmehold|udehold|spiller|fuldtid|1\.\s*halvleg|2\.\s*halvleg)\s*[-–—]/i.test(line)}
+function looksLikeMatch(line){return /^.{2,45}\s+(?:v|vs\.?|mod)\s+.{2,45}$/i.test(line)}
+function looksLikeLegStart(line){return /\b(over|under|flest|resultat|dobbeltchance|draw no bet|begge hold|btts|handicap|målscorer|scorer|assist|tackl(?:ing|inger)?|skud|hjørnespark|kort|frispark)\b/i.test(line)||/\b\d+\+\s*(?:skud|tackl|mål|hjørne|kort)/i.test(line)}
+function inferLeague(text){const l=text.toLowerCase();const pairs=[["premier league","Premier League"],["la liga","La Liga"],["serie a","Serie A"],["bundesliga","Bundesliga"],["ligue 1","Ligue 1"],["superliga","Superliga"],["champions league","Champions League"],["europa league","Europa League"],["conference league","Conference League"],["championship","Championship"],["eredivisie","Eredivisie"],["primeira liga","Primeira Liga"],["mls","MLS"]];return pairs.find(([k])=>l.includes(k))?.[1]||""}
+function inferMatch(lines){for(const raw of lines){const line=cleanOcrLine(raw);if(looksLikeMatch(line))return line.replace(/\s+(?:vs\.?|mod)\s+/i," - ").replace(/\s+v\s+/i," - ")}return ""}
+function inferTotalOdds(text,lines){
+  const matchIndex=lines.findIndex(x=>looksLikeMatch(cleanOcrLine(x)));
+  const candidates=[];
+  lines.forEach((raw,i)=>{const line=cleanOcrLine(raw);for(const m of line.matchAll(/\b([1-9]\d?[.,]\d{2})\b/g)){const n=Number(m[1].replace(",","."));if(n>=1.01&&n<=100)candidates.push({n,i,standalone:line===m[0]})}});
+  if(!candidates.length)return null;
+  candidates.sort((a,b)=>{const ad=matchIndex<0?99:Math.abs(a.i-matchIndex),bd=matchIndex<0?99:Math.abs(b.i-matchIndex);return (b.standalone-a.standalone)||(ad-bd)||(a.i-b.i)});
+  return candidates[0].n
+}
+function inferLegDetails(selection){
+  const t=selection.toLowerCase();let category="Andet",market="Other";
+  const isOver=/\bover\b/i.test(selection),isUnder=/\bunder\b/i.test(selection),isMost=/\bflest\b|\bmost\b/i.test(selection);
+  if(/hjørnespark|corner/.test(t)){category="Hjørnespark";market=isMost?"Most Corners":isUnder?"Corners Under":"Corners Over"}
+  else if(/skud på mål|shots? on target/.test(t)){category="Skud på mål";market=isMost?"Most Shots on Target":/:/.test(selection)?"Player Shots on Target":isUnder?"Shots on Target Under":"Shots on Target Over"}
+  else if(/\bskud\b|\bshots?\b/.test(t)){category="Skud";market=isMost?"Most Shots":/:/.test(selection)?"Player Shots":isUnder?"Shots Under":"Shots Over"}
+  else if(/tackl/.test(t)){category="Tacklinger";market="Player Tackles"}
+  else if(/assist/.test(t)){category="Spiller";market="Player Assist"}
+  else if(/målscorer|scorer/.test(t)){category="Spiller";market="Player to Score"}
+  else if(/begge hold|btts/.test(t)){category="BTTS";market=/nej|no/.test(t)?"BTTS No":"BTTS Yes"}
+  else if(/handicap/.test(t)){category="Handicap";market=/asian/.test(t)?"Asian Handicap":"European Handicap"}
+  else if(/kort|card/.test(t)){category="Kort";market=isMost?"Most Cards":isUnder?"Cards Under":"Cards Over"}
+  else if(/frispark|foul/.test(t)){category="Frispark";market=isMost?"Most Fouls":isUnder?"Fouls Under":"Fouls Over"}
+  else if(/\bmål\b|\bgoals?\b/.test(t)){category="Mål";market=isUnder?"Under 2.5 Goals":isOver?"Over 2.5 Goals":"Other"}
+  else if(/resultat|vinder|\bwin\b/.test(t)){category="Resultat";market="Other"}
+  let period="Fuldtid";if(/1\.\s*halvleg|første halvleg|first half/.test(t))period="1. halvleg";else if(/2\.\s*halvleg|anden halvleg|second half/.test(t))period="2. halvleg";
+  let line=null;let m=selection.match(/\b(?:over|under)\s+(\d+(?:[.,]\d+)?)/i);if(!m)m=selection.match(/\b(\d+)\+\b/);if(m)line=Number(m[1].replace(",","."));
+  let subject="";const colon=selection.match(/^([^:]{2,40}):\s*(.+)$/);if(colon&&!/resultat/i.test(colon[1]))subject=colon[1].trim();
+  const forMatch=selection.match(/\bfor\s+(.+?)(?:\s+i\s+[12]\.\s*halvleg|$)/i);if(forMatch)subject=forMatch[1].trim();
+  const resultSubject=selection.match(/resultat\s*:\s*(.+)$/i);if(resultSubject)subject=resultSubject[1].trim();
+  return{category,market,subject,selection,line,period,note:"Aflæst fra screenshot"}
+}
+function parseBetSlipText(text){
+  const rawLines=String(text||"").split(/\r?\n/).map(cleanOcrLine).filter(Boolean),league=inferLeague(text),match=inferMatch(rawLines),odds=inferTotalOdds(text,rawLines),legs=[];
+  for(let i=0;i<rawLines.length;i++){
+    let line=rawLines[i];if(isScanNoise(line)||isMarketDescriptor(line)||looksLikeMatch(line))continue;
+    if(!looksLikeLegStart(line))continue;
+    let combined=line;
+    while(i+1<rawLines.length){const next=rawLines[i+1];if(isScanNoise(next)||isMarketDescriptor(next)||looksLikeMatch(next)||looksLikeLegStart(next))break;if(combined.length+next.length>170)break;combined+=` ${next}`;i++}
+    combined=combined.replace(/\s+/g," ").trim();if(combined.length>=5)legs.push(inferLegDetails(combined))
+  }
+  const seen=new Set(),deduped=legs.filter(l=>{const k=l.selection.toLowerCase().replace(/[^a-zæøå0-9]+/g,"");if(!k||seen.has(k))return false;seen.add(k);return true});
+  return{league,match,odds,legs:deduped}
+}
+function showScanFiles(files){const preview=$("scanPreview");preview.innerHTML="";[...files].forEach(file=>{const img=document.createElement("img");img.src=URL.createObjectURL(file);img.alt=file.name;preview.appendChild(img)});preview.classList.toggle("hidden",!files.length)}
+function setScanProgress(percent,text){$("scanProgressWrap").classList.remove("hidden");$("scanProgressFill").style.width=`${Math.max(0,Math.min(100,percent))}%`;$("scanStatus").textContent=text}
+function applyScannedBet(parsed,rawText){
+  $("betType").value="Byg væddemål";toggleBuilder();$("legsList").innerHTML="";
+  if(parsed.league&&LEAGUES.includes(parsed.league))$("league").value=parsed.league;
+  if(parsed.match)$("match").value=parsed.match;if(parsed.odds)$("odds").value=parsed.odds.toFixed(2);
+  parsed.legs.forEach(l=>newLeg(l));if(parsed.legs.length<2){while($("legsList").children.length<2)newLeg()}
+  $("ocrText").value=rawText;$("scanSummary").textContent=parsed.legs.length?`Fandt ${parsed.legs.length} ben${parsed.match?` · ${parsed.match}`:""}${parsed.odds?` · odds ${parsed.odds.toFixed(2)}`:""}.`:`Jeg kunne ikke finde sikre ben automatisk. Se den aflæste tekst og ret felterne manuelt.`;
+  $("scanResult").classList.remove("hidden")
+}
+async function scanBetSlipFiles(files){
+  files=[...files];if(!files.length)return;if(!window.Tesseract){alert("Billedaflæsning kunne ikke indlæses. Tjek internetforbindelsen og prøv igen.");return}
+  showScanFiles(files);$("scanResult").classList.add("hidden");let texts=[];
+  try{
+    for(let i=0;i<files.length;i++){
+      const base=i/files.length*100,span=100/files.length;setScanProgress(base,`Billede ${i+1}/${files.length}…`);
+      let result;
+      try{result=await window.Tesseract.recognize(files[i],"dan+eng",{logger:m=>{if(m.status==="recognizing text")setScanProgress(base+(m.progress||0)*span,`Aflæser ${Math.round((m.progress||0)*100)}%`)}})}
+      catch(_){result=await window.Tesseract.recognize(files[i],"eng",{logger:m=>{if(m.status==="recognizing text")setScanProgress(base+(m.progress||0)*span,`Aflæser ${Math.round((m.progress||0)*100)}%`)}})}
+      texts.push(result?.data?.text||"")
+    }
+    setScanProgress(100,"Færdig");const rawText=texts.join("\n\n--- næste billede ---\n\n"),parsed=parseBetSlipText(rawText);applyScannedBet(parsed,rawText)
+  }catch(err){console.error(err);setScanProgress(0,"Kunne ikke aflæse");alert("Jeg kunne ikke aflæse billedet. Prøv et tydeligere screenshot eller indtast benene manuelt.")}
+}
+function clearScan(){$("betSlipImages").value="";$("scanPreview").innerHTML="";$("scanPreview").classList.add("hidden");$("scanProgressWrap").classList.add("hidden");$("scanResult").classList.add("hidden");$("ocrText").value=""}
+
 function renderHistory(){
   const q=$("searchInput").value.toLowerCase(),rf=$("resultFilter").value,lf=$("leagueFilter").value,mf=$("marketFilter").value,tf=$("betTypeFilter").value;
   const arr=[...state.bets].sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)).filter(b=>{const legText=(b.legs||[]).map(l=>`${l.market} ${l.subject} ${l.selection}`).join(" ");const hay=`${b.match} ${b.league} ${b.market} ${b.betType} ${legText}`.toLowerCase();return(!q||hay.includes(q))&&(!rf||b.result===rf)&&(!lf||b.league===lf)&&(!mf||b.market===mf)&&(!tf||b.betType===tf)});
@@ -204,10 +281,14 @@ $("betForm").addEventListener("submit",async e=>{
   if(isBuilder&&legs.some(l=>!l.market||!l.selection)){alert("Vælg marked og skriv valg på alle ben.");return}
   const data={date:$("date").value,betType:$("betType").value,league:$("league").value,match:$("match").value.trim(),market:isBuilder?"Bet Builder":$("market").value,stake:Number($("stake").value),odds:Number($("odds").value),result:$("result").value,note:$("note").value.trim(),cashOutReturn:Number($("cashOutReturn").value)||0,legs};
   setSync("Gemmer…");const{error}=await supabase.from("bets").insert({user_id:currentUser.id,data});if(error){alert(error.message);setSync("Synk-fejl",true);return}
-  e.target.reset();$("date").value=today();$("betType").value="Single";$("result").value="Pending";$("cashOutWrap").classList.add("hidden");$("legsList").innerHTML="";toggleBuilder();await loadCloud();setSuggestedStake(true);showView("historyView")
+  e.target.reset();clearScan();$("date").value=today();$("betType").value="Single";$("result").value="Pending";$("cashOutWrap").classList.add("hidden");$("legsList").innerHTML="";toggleBuilder();await loadCloud();setSuggestedStake(true);showView("historyView")
 });
 $("result").addEventListener("change",()=>$("cashOutWrap").classList.toggle("hidden",$("result").value!=="Cash Out"));
 $("betType").addEventListener("change",toggleBuilder);$("addLegBtn").addEventListener("click",()=>newLeg());
+$("chooseBetSlipBtn").addEventListener("click",()=>$("betSlipImages").click());
+$("betSlipImages").addEventListener("change",e=>scanBetSlipFiles(e.target.files));
+$("rescanBtn").addEventListener("click",()=>scanBetSlipFiles($("betSlipImages").files));
+$("clearScanBtn").addEventListener("click",clearScan);
 document.querySelectorAll(".bottom-nav button").forEach(b=>b.addEventListener("click",()=>showView(b.dataset.view)));$("quickAdd").addEventListener("click",()=>showView("newBetView"));
 ["searchInput","resultFilter","leagueFilter","marketFilter","betTypeFilter"].forEach(id=>$(id).addEventListener(id==="searchInput"?"input":"change",renderHistory));
 window.deleteBet=async id=>{if(!confirm("Slet dette bet?"))return;const{error}=await supabase.from("bets").delete().eq("id",id);if(error)return alert(error.message);await loadCloud()};
