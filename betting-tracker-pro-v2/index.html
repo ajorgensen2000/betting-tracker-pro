@@ -92,7 +92,7 @@
   <form id="betForm" class="panel form-grid">
     <section class="full scan-betslip-card">
       <div class="scan-head">
-        <div><h2>📷 Scan betslip</h2><p>Upload ét eller flere screenshots. Appen aflæser teksten og opretter benene automatisk.</p></div>
+        <div><h2>📷 AI-scan betslip <span class="scan-ai-badge">V7</span></h2><p>Upload ét eller flere screenshots. AI analyserer layout, kamp, samlet odds og hvert enkelt ben. Lokal OCR bruges automatisk som fallback.</p></div>
         <button id="chooseBetSlipBtn" class="secondary mini" type="button">Vælg billeder</button>
       </div>
       <input id="betSlipImages" type="file" accept="image/*" multiple class="hidden">
@@ -100,7 +100,8 @@
       <div id="scanProgressWrap" class="scan-progress-wrap hidden"><div class="scan-progress"><div id="scanProgressFill" class="scan-progress-fill"></div></div><span id="scanStatus">Klar</span></div>
       <div id="scanResult" class="scan-result hidden">
         <strong id="scanSummary">Ingen ben fundet endnu.</strong>
-        <p>Kontrollér altid de fundne ben, odds og kamp før du gemmer bettet.</p>
+        <p id="scanHint">Kontrollér altid de fundne ben, odds og kamp før du gemmer bettet.</p>
+        <div id="scanWarnings" class="scan-warnings hidden"></div>
         <details><summary>Se aflæst tekst</summary><textarea id="ocrText" rows="7" readonly></textarea></details>
         <div class="button-row scan-actions"><button id="rescanBtn" type="button" class="secondary">Aflæs igen</button><button id="clearScanBtn" type="button" class="secondary">Ryd scan</button></div>
       </div>

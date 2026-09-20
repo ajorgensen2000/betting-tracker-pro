@@ -168,7 +168,7 @@ function toggleBuilder(){
 }
 function legSummary(leg){const line=leg.line!==null&&leg.line!==undefined&&leg.line!==""?` ${leg.line}`:"";const subj=leg.subject?` · ${esc(leg.subject)}`:"";const period=leg.period&&leg.period!=="Fuldtid"?` · ${esc(leg.period)}`:"";return`<div class="history-leg"><strong>${esc(leg.market||leg.category||"Ben")}</strong><span>${esc(leg.selection||"")}${line}${subj}${period}</span></div>`}
 
-// V6: betslip scanner. OCR runs locally in the browser with Tesseract.js.
+// V7: AI Vision betslip scanner with local OCR fallback.
 const SCAN_NOISE=["session","ansvarsfuldt spil","saldo","vis muligheder","byg væddemål","beløb","gevinst boost","boost nu","placér væddemål","placer væddemål","væddemålskreditter","sport","live","casino"];
 function cleanOcrLine(line){return String(line||"").replace(/[•●○◦×✕]/g," ").replace(/\s+/g," ").replace(/^[-–—|]+|[-–—|]+$/g,"").trim()}
 function isScanNoise(line){const l=line.toLowerCase();return !l||l.length<2||SCAN_NOISE.some(x=>l===x||l.startsWith(x+" "))||/^\d{1,2}[.:]\d{2}$/.test(l)||/^\d{1,2}\s*(aug|sep|okt|nov|dec|jan|feb|mar|apr|maj|jun|jul)\b/.test(l)}
@@ -178,16 +178,12 @@ function looksLikeLegStart(line){return /\b(over|under|flest|resultat|dobbeltcha
 function inferLeague(text){const l=text.toLowerCase();const pairs=[["premier league","Premier League"],["la liga","La Liga"],["serie a","Serie A"],["bundesliga","Bundesliga"],["ligue 1","Ligue 1"],["superliga","Superliga"],["champions league","Champions League"],["europa league","Europa League"],["conference league","Conference League"],["championship","Championship"],["eredivisie","Eredivisie"],["primeira liga","Primeira Liga"],["mls","MLS"]];return pairs.find(([k])=>l.includes(k))?.[1]||""}
 function inferMatch(lines){for(const raw of lines){const line=cleanOcrLine(raw);if(looksLikeMatch(line))return line.replace(/\s+(?:vs\.?|mod)\s+/i," - ").replace(/\s+v\s+/i," - ")}return ""}
 function inferTotalOdds(text,lines){
-  const matchIndex=lines.findIndex(x=>looksLikeMatch(cleanOcrLine(x)));
-  const candidates=[];
+  const matchIndex=lines.findIndex(x=>looksLikeMatch(cleanOcrLine(x))),candidates=[];
   lines.forEach((raw,i)=>{const line=cleanOcrLine(raw);for(const m of line.matchAll(/\b([1-9]\d?[.,]\d{2})\b/g)){const n=Number(m[1].replace(",","."));if(n>=1.01&&n<=100)candidates.push({n,i,standalone:line===m[0]})}});
-  if(!candidates.length)return null;
-  candidates.sort((a,b)=>{const ad=matchIndex<0?99:Math.abs(a.i-matchIndex),bd=matchIndex<0?99:Math.abs(b.i-matchIndex);return (b.standalone-a.standalone)||(ad-bd)||(a.i-b.i)});
-  return candidates[0].n
+  if(!candidates.length)return null;candidates.sort((a,b)=>{const ad=matchIndex<0?99:Math.abs(a.i-matchIndex),bd=matchIndex<0?99:Math.abs(b.i-matchIndex);return (b.standalone-a.standalone)||(ad-bd)||(a.i-b.i)});return candidates[0].n
 }
 function inferLegDetails(selection){
-  const t=selection.toLowerCase();let category="Andet",market="Other";
-  const isOver=/\bover\b/i.test(selection),isUnder=/\bunder\b/i.test(selection),isMost=/\bflest\b|\bmost\b/i.test(selection);
+  const t=selection.toLowerCase();let category="Andet",market="Other";const isOver=/\bover\b/i.test(selection),isUnder=/\bunder\b/i.test(selection),isMost=/\bflest\b|\bmost\b/i.test(selection);
   if(/hjørnespark|corner/.test(t)){category="Hjørnespark";market=isMost?"Most Corners":isUnder?"Corners Under":"Corners Over"}
   else if(/skud på mål|shots? on target/.test(t)){category="Skud på mål";market=isMost?"Most Shots on Target":/:/.test(selection)?"Player Shots on Target":isUnder?"Shots on Target Under":"Shots on Target Over"}
   else if(/\bskud\b|\bshots?\b/.test(t)){category="Skud";market=isMost?"Most Shots":/:/.test(selection)?"Player Shots":isUnder?"Shots Under":"Shots Over"}
@@ -198,52 +194,50 @@ function inferLegDetails(selection){
   else if(/handicap/.test(t)){category="Handicap";market=/asian/.test(t)?"Asian Handicap":"European Handicap"}
   else if(/kort|card/.test(t)){category="Kort";market=isMost?"Most Cards":isUnder?"Cards Under":"Cards Over"}
   else if(/frispark|foul/.test(t)){category="Frispark";market=isMost?"Most Fouls":isUnder?"Fouls Under":"Fouls Over"}
-  else if(/\bmål\b|\bgoals?\b/.test(t)){category="Mål";market=isUnder?"Under 2.5 Goals":isOver?"Over 2.5 Goals":"Other"}
+  else if(/\bmål\b|\bgoals?\b/.test(t)){category="Mål";market=isUnder?"Team Goals Under":isOver?"Team Goals Over":"Other"}
   else if(/resultat|vinder|\bwin\b/.test(t)){category="Resultat";market="Other"}
   let period="Fuldtid";if(/1\.\s*halvleg|første halvleg|first half/.test(t))period="1. halvleg";else if(/2\.\s*halvleg|anden halvleg|second half/.test(t))period="2. halvleg";
   let line=null;let m=selection.match(/\b(?:over|under)\s+(\d+(?:[.,]\d+)?)/i);if(!m)m=selection.match(/\b(\d+)\+\b/);if(m)line=Number(m[1].replace(",","."));
-  let subject="";const colon=selection.match(/^([^:]{2,40}):\s*(.+)$/);if(colon&&!/resultat/i.test(colon[1]))subject=colon[1].trim();
-  const forMatch=selection.match(/\bfor\s+(.+?)(?:\s+i\s+[12]\.\s*halvleg|$)/i);if(forMatch)subject=forMatch[1].trim();
-  const resultSubject=selection.match(/resultat\s*:\s*(.+)$/i);if(resultSubject)subject=resultSubject[1].trim();
-  return{category,market,subject,selection,line,period,note:"Aflæst fra screenshot"}
+  let subject="";const colon=selection.match(/^([^:]{2,40}):\s*(.+)$/);if(colon&&!/resultat/i.test(colon[1]))subject=colon[1].trim();const forMatch=selection.match(/\bfor\s+(.+?)(?:\s+i\s+[12]\.\s*halvleg|$)/i);if(forMatch)subject=forMatch[1].trim();const resultSubject=selection.match(/resultat\s*:\s*(.+)$/i);if(resultSubject)subject=resultSubject[1].trim();
+  return{category,market,subject,selection,line,period,note:"Lokal OCR · kontrollér"}
 }
 function parseBetSlipText(text){
   const rawLines=String(text||"").split(/\r?\n/).map(cleanOcrLine).filter(Boolean),league=inferLeague(text),match=inferMatch(rawLines),odds=inferTotalOdds(text,rawLines),legs=[];
-  for(let i=0;i<rawLines.length;i++){
-    let line=rawLines[i];if(isScanNoise(line)||isMarketDescriptor(line)||looksLikeMatch(line))continue;
-    if(!looksLikeLegStart(line))continue;
-    let combined=line;
-    while(i+1<rawLines.length){const next=rawLines[i+1];if(isScanNoise(next)||isMarketDescriptor(next)||looksLikeMatch(next)||looksLikeLegStart(next))break;if(combined.length+next.length>170)break;combined+=` ${next}`;i++}
-    combined=combined.replace(/\s+/g," ").trim();if(combined.length>=5)legs.push(inferLegDetails(combined))
-  }
-  const seen=new Set(),deduped=legs.filter(l=>{const k=l.selection.toLowerCase().replace(/[^a-zæøå0-9]+/g,"");if(!k||seen.has(k))return false;seen.add(k);return true});
-  return{league,match,odds,legs:deduped}
+  for(let i=0;i<rawLines.length;i++){let line=rawLines[i];if(isScanNoise(line)||isMarketDescriptor(line)||looksLikeMatch(line)||!looksLikeLegStart(line))continue;let combined=line;while(i+1<rawLines.length){const next=rawLines[i+1];if(isScanNoise(next)||isMarketDescriptor(next)||looksLikeMatch(next)||looksLikeLegStart(next))break;if(combined.length+next.length>170)break;combined+=` ${next}`;i++}combined=combined.replace(/\s+/g," ").trim();if(combined.length>=5)legs.push(inferLegDetails(combined))}
+  const seen=new Set(),deduped=legs.filter(l=>{const k=l.selection.toLowerCase().replace(/[^a-zæøå0-9]+/g,"");if(!k||seen.has(k))return false;seen.add(k);return true});return{betType:deduped.length>1?"Byg væddemål":"Single",league,match,odds,legs:deduped,warnings:["Resultatet er lavet med lokal OCR. Kontrollér især linjer, hold/spillere og samlet odds."],overall_confidence:.5,raw_text:text}
 }
 function showScanFiles(files){const preview=$("scanPreview");preview.innerHTML="";[...files].forEach(file=>{const img=document.createElement("img");img.src=URL.createObjectURL(file);img.alt=file.name;preview.appendChild(img)});preview.classList.toggle("hidden",!files.length)}
 function setScanProgress(percent,text){$("scanProgressWrap").classList.remove("hidden");$("scanProgressFill").style.width=`${Math.max(0,Math.min(100,percent))}%`;$("scanStatus").textContent=text}
-function applyScannedBet(parsed,rawText){
-  $("betType").value="Byg væddemål";toggleBuilder();$("legsList").innerHTML="";
-  if(parsed.league&&LEAGUES.includes(parsed.league))$("league").value=parsed.league;
-  if(parsed.match)$("match").value=parsed.match;if(parsed.odds)$("odds").value=parsed.odds.toFixed(2);
-  parsed.legs.forEach(l=>newLeg(l));if(parsed.legs.length<2){while($("legsList").children.length<2)newLeg()}
-  $("ocrText").value=rawText;$("scanSummary").textContent=parsed.legs.length?`Fandt ${parsed.legs.length} ben${parsed.match?` · ${parsed.match}`:""}${parsed.odds?` · odds ${parsed.odds.toFixed(2)}`:""}.`:`Jeg kunne ikke finde sikre ben automatisk. Se den aflæste tekst og ret felterne manuelt.`;
-  $("scanResult").classList.remove("hidden")
+function normaliseAiParsed(parsed){
+  const legs=Array.isArray(parsed?.legs)?parsed.legs:[];return{betType:parsed?.betType|| (legs.length>1?"Byg væddemål":"Single"),league:LEAGUES.includes(parsed?.league)?parsed.league:"",match:String(parsed?.match||"").trim(),odds:Number.isFinite(Number(parsed?.odds))?Number(parsed.odds):null,overall_confidence:Math.max(0,Math.min(1,Number(parsed?.overall_confidence)||0)),raw_text:String(parsed?.raw_text||""),warnings:Array.isArray(parsed?.warnings)?parsed.warnings.map(String):[],legs:legs.map(l=>({category:LEG_CATEGORIES.includes(l?.category)?l.category:"Andet",market:MARKETS.includes(l?.market)?l.market:"Other",subject:String(l?.subject||"").trim(),selection:String(l?.selection||"").trim(),line:l?.line===null||l?.line===""?null:Number(l.line),period:PERIODS.includes(l?.period)?l.period:"Fuldtid",confidence:Math.max(0,Math.min(1,Number(l?.confidence)||0)),warning:String(l?.warning||"")}))}
+}
+function applyScannedBet(parsed,rawText,source="AI Vision"){
+  parsed=normaliseAiParsed(parsed);const isBuilder=parsed.legs.length>1||parsed.betType==="Byg væddemål";$("betType").value=isBuilder?"Byg væddemål":"Single";toggleBuilder();$("legsList").innerHTML="";
+  if(parsed.league&&LEAGUES.includes(parsed.league))$("league").value=parsed.league;if(parsed.match)$("match").value=parsed.match;if(parsed.odds)$("odds").value=parsed.odds.toFixed(2);
+  if(isBuilder){parsed.legs.forEach(l=>newLeg({...l,note:`${source}${l.confidence?` · ${Math.round(l.confidence*100)}%`:""}${l.warning?` · ${l.warning}`:""}`}));if(parsed.legs.length<2){while($("legsList").children.length<2)newLeg()}}
+  $("ocrText").value=rawText||parsed.raw_text||"";
+  const confidence=parsed.overall_confidence?` · sikkerhed ${Math.round(parsed.overall_confidence*100)}%`:"";$("scanSummary").textContent=parsed.legs.length?`${source} fandt ${parsed.legs.length} ${parsed.legs.length===1?"ben":"ben"}${parsed.match?` · ${parsed.match}`:""}${parsed.odds?` · odds ${parsed.odds.toFixed(2)}`:""}${confidence}.`:`Ingen sikre ben fundet automatisk.`;
+  const warnings=[...parsed.warnings,...parsed.legs.filter(l=>l.confidence&&l.confidence<.75).map((l,i)=>`Ben ${i+1} har lavere sikkerhed (${Math.round(l.confidence*100)}%).`),...parsed.legs.filter(l=>l.warning).map((l,i)=>`Ben ${i+1}: ${l.warning}`)].filter(Boolean);const w=$("scanWarnings");w.innerHTML=warnings.length?`<strong>Kontrollér:</strong><ul>${warnings.slice(0,8).map(x=>`<li>${esc(x)}</li>`).join("")}</ul>`:"";w.classList.toggle("hidden",!warnings.length);
+  $("scanHint").textContent=source==="AI Vision"?"AI har forstået billedets layout og forsøgt at adskille hvert ben. Kontrollér felterne før du gemmer.":"AI-scanneren var ikke tilgængelig, så lokal OCR blev brugt. Kontrollér ekstra grundigt.";$("scanResult").className=`scan-result ${source==="AI Vision"?"ai-success":"ocr-fallback"}`;$("scanResult").classList.remove("hidden")
+}
+function loadImage(file){return new Promise((resolve,reject)=>{const url=URL.createObjectURL(file),img=new Image();img.onload=()=>{URL.revokeObjectURL(url);resolve(img)};img.onerror=e=>{URL.revokeObjectURL(url);reject(e)};img.src=url})}
+async function fileToOptimizedDataUrl(file){
+  const img=await loadImage(file),maxDim=2600,scale=Math.min(1,maxDim/Math.max(img.naturalWidth,img.naturalHeight)),w=Math.max(1,Math.round(img.naturalWidth*scale)),h=Math.max(1,Math.round(img.naturalHeight*scale)),canvas=document.createElement("canvas");canvas.width=w;canvas.height=h;const ctx=canvas.getContext("2d");ctx.drawImage(img,0,0,w,h);return canvas.toDataURL("image/jpeg",.88)
+}
+async function scanWithAiVision(files){
+  const selected=[...files].slice(0,4),images=[];for(let i=0;i<selected.length;i++){setScanProgress(8+i/selected.length*25,`Forbereder billede ${i+1}/${selected.length}…`);images.push(await fileToOptimizedDataUrl(selected[i]))}
+  setScanProgress(38,"AI analyserer layout, odds og ben…");const r=await fetch("/api/scan-betslip",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({images})});let data={};try{data=await r.json()}catch{}
+  if(!r.ok){const err=new Error(data?.error||"AI-scanneren kunne ikke bruges.");err.code=data?.code||"AI_ERROR";throw err}setScanProgress(100,"AI-scan færdig");return normaliseAiParsed(data)
+}
+async function scanWithLocalOcr(files){
+  if(!window.Tesseract)throw new Error("Lokal OCR kunne ikke indlæses.");const texts=[];files=[...files];for(let i=0;i<files.length;i++){const base=i/files.length*100,span=100/files.length;setScanProgress(base,`OCR billede ${i+1}/${files.length}…`);let result;try{result=await window.Tesseract.recognize(files[i],"dan+eng",{logger:m=>{if(m.status==="recognizing text")setScanProgress(base+(m.progress||0)*span,`OCR ${Math.round((m.progress||0)*100)}%`)}})}catch(_){result=await window.Tesseract.recognize(files[i],"eng",{logger:m=>{if(m.status==="recognizing text")setScanProgress(base+(m.progress||0)*span,`OCR ${Math.round((m.progress||0)*100)}%`)}})}texts.push(result?.data?.text||"")}const rawText=texts.join("\n\n--- næste billede ---\n\n");setScanProgress(100,"OCR færdig");return{parsed:parseBetSlipText(rawText),rawText}
 }
 async function scanBetSlipFiles(files){
-  files=[...files];if(!files.length)return;if(!window.Tesseract){alert("Billedaflæsning kunne ikke indlæses. Tjek internetforbindelsen og prøv igen.");return}
-  showScanFiles(files);$("scanResult").classList.add("hidden");let texts=[];
-  try{
-    for(let i=0;i<files.length;i++){
-      const base=i/files.length*100,span=100/files.length;setScanProgress(base,`Billede ${i+1}/${files.length}…`);
-      let result;
-      try{result=await window.Tesseract.recognize(files[i],"dan+eng",{logger:m=>{if(m.status==="recognizing text")setScanProgress(base+(m.progress||0)*span,`Aflæser ${Math.round((m.progress||0)*100)}%`)}})}
-      catch(_){result=await window.Tesseract.recognize(files[i],"eng",{logger:m=>{if(m.status==="recognizing text")setScanProgress(base+(m.progress||0)*span,`Aflæser ${Math.round((m.progress||0)*100)}%`)}})}
-      texts.push(result?.data?.text||"")
-    }
-    setScanProgress(100,"Færdig");const rawText=texts.join("\n\n--- næste billede ---\n\n"),parsed=parseBetSlipText(rawText);applyScannedBet(parsed,rawText)
-  }catch(err){console.error(err);setScanProgress(0,"Kunne ikke aflæse");alert("Jeg kunne ikke aflæse billedet. Prøv et tydeligere screenshot eller indtast benene manuelt.")}
+  files=[...files];if(!files.length)return;showScanFiles(files);$("scanResult").classList.add("hidden");$("scanWarnings").classList.add("hidden");
+  try{const parsed=await scanWithAiVision(files);applyScannedBet(parsed,parsed.raw_text,"AI Vision")}
+  catch(aiErr){console.warn("AI Vision fallback",aiErr);try{setScanProgress(0,aiErr.code==="AI_NOT_CONFIGURED"?"AI ikke aktiveret · bruger lokal OCR":"AI fejlede · bruger lokal OCR");const {parsed,rawText}=await scanWithLocalOcr(files);parsed.warnings=[aiErr.code==="AI_NOT_CONFIGURED"?"AI Vision er ikke aktiveret på Vercel endnu. Lokal OCR blev brugt.":"AI Vision kunne ikke gennemføre scanningen. Lokal OCR blev brugt.",...(parsed.warnings||[])];applyScannedBet(parsed,rawText,"Lokal OCR")}catch(ocrErr){console.error(ocrErr);setScanProgress(0,"Kunne ikke aflæse");alert("Billedet kunne ikke aflæses. Prøv et tydeligere screenshot eller indtast benene manuelt.")}}
 }
-function clearScan(){$("betSlipImages").value="";$("scanPreview").innerHTML="";$("scanPreview").classList.add("hidden");$("scanProgressWrap").classList.add("hidden");$("scanResult").classList.add("hidden");$("ocrText").value=""}
+function clearScan(){$("betSlipImages").value="";$("scanPreview").innerHTML="";$("scanPreview").classList.add("hidden");$("scanProgressWrap").classList.add("hidden");$("scanResult").classList.add("hidden");$("scanWarnings").classList.add("hidden");$("ocrText").value=""}
 
 function renderHistory(){
   const q=$("searchInput").value.toLowerCase(),rf=$("resultFilter").value,lf=$("leagueFilter").value,mf=$("marketFilter").value,tf=$("betTypeFilter").value;
